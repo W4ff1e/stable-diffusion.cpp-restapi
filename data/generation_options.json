@@ -293,7 +293,7 @@
     },
     "custom_sigmas": {
       "label": "Custom Sigma Schedule",
-      "description": "Replace the scheduler's noise sigma sequence with a hand-tuned one. Bypasses `scheduler`. Empty array = use the chosen scheduler.",
+      "description": "Replace the scheduler's noise sigma sequence with a hand-tuned one. Bypasses `scheduler`; the sigma count sets the real step count. Also accepts a comma-separated string or the preset name `qwen-image-2.1-turbo` (Qwen Image 2.1 Turbo, 8 steps). Empty = use the chosen scheduler.",
       "type": "array<number>",
       "default": [],
       "applies_to": [

@@ -123,6 +123,15 @@ struct ModelLoadParams {
     bool vae_conv_direct = false;               // Use ggml_conv2d_direct in VAE
     bool diffusion_conv_direct = false;         // Use ggml_conv2d_direct in diffusion
     bool tae_preview_only = false;              // Only use TAESD for preview, not final
+    // Per-module flash attention / direct convolution selection (upstream
+    // --flash-attn / --conv-direct). "on" | "off" | "auto", optionally with
+    // module assignments, e.g. "auto,te=off" or "auto,vae=on". Empty = sd.cpp
+    // honors the legacy booleans above, and auto-selects when they are false.
+    std::string flash_attn_mode;
+    std::string conv_direct_mode;
+    // Run conditional + unconditional CFG in one batched UNet forward when the
+    // run qualifies (UNet models). Upstream default on.
+    bool batched_cfg = true;
     // Per-component CPU placement and "always keep all weights in RAM" are no longer
     // bool flags on sd_ctx_params_t. Upstream (leejet PR #1654) routes them through
     // the `backend` / `params_backend` strings instead — e.g. "diffusion=cuda0,vae=cpu"

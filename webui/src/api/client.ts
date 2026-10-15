@@ -23,6 +23,12 @@ export interface LoadOptions {
   enable_mmap?: boolean
   vae_conv_direct?: boolean
   diffusion_conv_direct?: boolean
+  /** "on" | "off" | "auto", optionally with module assignments ("auto,te=off"). Overrides the legacy flash flags. */
+  flash_attn_mode?: string
+  /** "on" | "off" | "auto", optionally with diffusion/vae/controlnet assignments. Overrides the legacy conv flags. */
+  conv_direct_mode?: string
+  /** Batch cond + uncond CFG into one UNet forward (default true). */
+  batched_cfg?: boolean
   tae_preview_only?: boolean
   force_sdxl_vae_conv_scale?: boolean
   /**
@@ -245,7 +251,7 @@ export interface GenerationParams {
   skip_layers?: number[]
   slg_start?: number
   slg_end?: number
-  custom_sigmas?: number[]
+  custom_sigmas?: number[] | string  // list, comma string, or preset name (qwen-image-2.1-turbo)
   ref_images?: string[]
   ref_image_args?: string
   image_preprocess?: string

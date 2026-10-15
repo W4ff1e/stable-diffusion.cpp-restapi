@@ -210,6 +210,32 @@ static void validate_enum_load(const std::string& field,
     throw std::runtime_error(msg);
 }
 
+// flash_attn_mode / conv_direct_mode: "on" | "off" | "auto", optionally
+// followed by module assignments ("auto,te=off,vae=on"). Module names are
+// left to sd.cpp (same names as the backend option); this catches typos in
+// the values, which sd.cpp would otherwise only report as a failed load.
+static void validate_module_mode(const std::string& field, const std::string& value) {
+    if (value.empty()) return;
+    auto is_mode = [](std::string v) {
+        std::transform(v.begin(), v.end(), v.begin(), ::tolower);
+        return v == "on" || v == "off" || v == "auto";
+    };
+    std::stringstream ss(value);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        item.erase(0, item.find_first_not_of(" \t"));
+        item.erase(item.find_last_not_of(" \t") + 1);
+        auto eq = item.find('=');
+        std::string mode = eq == std::string::npos ? item : item.substr(eq + 1);
+        bool ok = is_mode(mode) && (eq == std::string::npos || eq > 0);
+        if (!ok) {
+            throw std::runtime_error("Invalid " + field + " '" + value +
+                "' in /models/load options. Use on, off or auto, optionally with "
+                "module assignments, e.g. \"auto,te=off,vae=on\".");
+        }
+    }
+}
+
 static void reject_unknown_keys(const std::string& where,
                                 const nlohmann::json& j,
                                 const std::unordered_set<std::string>& known) {
@@ -331,6 +357,7 @@ ModelLoadParams ModelLoadParams::from_json(const nlohmann::json& j) {
             "enable_mmap", "max_vram",
             // VAE/diffusion compute
             "vae_conv_direct", "diffusion_conv_direct",
+            "flash_attn_mode", "conv_direct_mode", "batched_cfg",
             "tae_preview_only", "force_sdxl_vae_conv_scale",
             // Weight type / per-tensor rules — flow_shift is per-generation now.
             "weight_type", "tensor_type_rules",
@@ -378,6 +405,11 @@ ModelLoadParams ModelLoadParams::from_json(const nlohmann::json& j) {
         params.vae_conv_direct = opts.value("vae_conv_direct", false);
         params.diffusion_conv_direct = opts.value("diffusion_conv_direct", false);
         params.tae_preview_only = opts.value("tae_preview_only", false);
+        params.flash_attn_mode = opts.value("flash_attn_mode", "");
+        params.conv_direct_mode = opts.value("conv_direct_mode", "");
+        params.batched_cfg = opts.value("batched_cfg", true);
+        validate_module_mode("flash_attn_mode", params.flash_attn_mode);
+        validate_module_mode("conv_direct_mode", params.conv_direct_mode);
         // 0 = no explicit budget (sd.cpp uses live free VRAM). Negative
         // values used to mean "-1 = auto" upstream; that sentinel is gone,
         // so coerce anything negative back to 0 to match the new contract.
@@ -1502,6 +1534,9 @@ bool ModelManager::load_model(const ModelLoadParams& params) {
     ctx_params.vae_conv_direct = params.vae_conv_direct;
     ctx_params.diffusion_conv_direct = params.diffusion_conv_direct;
     ctx_params.tae_preview_only = params.tae_preview_only;
+    ctx_params.flash_attn_mode = params.flash_attn_mode.empty() ? nullptr : params.flash_attn_mode.c_str();
+    ctx_params.conv_direct_mode = params.conv_direct_mode.empty() ? nullptr : params.conv_direct_mode.c_str();
+    ctx_params.batched_cfg = params.batched_cfg;
     // flow_shift is per-generation (sd_sample_params_t.flow_shift), wired in
     // sd_wrapper.cpp's generate_txt2img / generate_img2img / generate_txt2vid.
     ctx_params.force_sdxl_vae_conv_scale = params.force_sdxl_vae_conv_scale;
@@ -1770,6 +1805,9 @@ bool ModelManager::load_model(const ModelLoadParams& params) {
     loaded_options_["vae_conv_direct"] = params.vae_conv_direct;
     loaded_options_["diffusion_conv_direct"] = params.diffusion_conv_direct;
     loaded_options_["tae_preview_only"] = params.tae_preview_only;
+    loaded_options_["flash_attn_mode"] = params.flash_attn_mode;
+    loaded_options_["conv_direct_mode"] = params.conv_direct_mode;
+    loaded_options_["batched_cfg"] = params.batched_cfg;
     // Always emit max_vram so 0 (= no explicit budget) round-trips correctly
     // to the WebUI Edit form - otherwise a user who set a cap then unset it
     // back to 0 wouldn't see the cap clear in the restored state.

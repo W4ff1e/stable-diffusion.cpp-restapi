@@ -72,6 +72,9 @@ const loadParams = ref<LoadModelParams>({
     enable_mmap: true,
     vae_conv_direct: false,
     diffusion_conv_direct: false,
+    flash_attn_mode: '',
+    conv_direct_mode: '',
+    batched_cfg: true,
     tae_preview_only: false,
     force_sdxl_vae_conv_scale: false,
     max_vram: 0,
@@ -788,13 +791,18 @@ function onKeepAllInRam(e: Event) {
           <div class="options-group">
             <h4 class="options-group-title">Performance</h4>
             <div class="options-grid">
+              <label class="form-field-inline" :title="getOptionDesc('flash_attn_mode')?.description">
+                <span>Flash attention mode</span>
+                <input v-model.trim="loadParams.options!.flash_attn_mode" list="module-mode-values" placeholder="legacy checkboxes" class="form-input mode-input" />
+                <RecHint :desc="getOptionDesc('flash_attn_mode')" />
+              </label>
               <label class="form-checkbox" :title="getOptionDesc('flash_attn')?.description">
-                <input v-model="loadParams.options!.flash_attn" type="checkbox" />
+                <input v-model="loadParams.options!.flash_attn" type="checkbox" :disabled="!!loadParams.options!.flash_attn_mode" />
                 <span>Flash Attention</span>
                 <RecHint :desc="getOptionDesc('flash_attn')" />
               </label>
               <label class="form-checkbox" :title="getOptionDesc('diffusion_flash_attn')?.description">
-                <input v-model="loadParams.options!.diffusion_flash_attn" type="checkbox" />
+                <input v-model="loadParams.options!.diffusion_flash_attn" type="checkbox" :disabled="!!loadParams.options!.flash_attn_mode" />
                 <span>Diffusion Flash Attention</span>
                 <RecHint :desc="getOptionDesc('diffusion_flash_attn')" />
               </label>
@@ -802,6 +810,11 @@ function onKeepAllInRam(e: Event) {
                 <input v-model="loadParams.options!.sage_attn" type="checkbox" />
                 <span>SageAttention</span>
                 <RecHint :desc="getOptionDesc('sage_attn')" />
+              </label>
+              <label class="form-checkbox" :title="getOptionDesc('batched_cfg')?.description">
+                <input v-model="loadParams.options!.batched_cfg" type="checkbox" />
+                <span>Batched CFG</span>
+                <RecHint :desc="getOptionDesc('batched_cfg')" />
               </label>
               <label class="form-field-inline" :title="getOptionDesc('conditioning_cache_size')?.description || 'How many prompt-encode results to keep per loaded model. Re-running the same prompt skips the text encoder. 0 disables.'">
                 <span>Conditioning cache</span>
@@ -907,13 +920,25 @@ function onKeepAllInRam(e: Event) {
           <div class="options-group">
             <h4 class="options-group-title">VAE / Conv Settings</h4>
             <div class="options-grid">
+              <label class="form-field-inline" :title="getOptionDesc('conv_direct_mode')?.description">
+                <span>Direct conv mode</span>
+                <input v-model.trim="loadParams.options!.conv_direct_mode" list="module-mode-values" placeholder="legacy checkboxes" class="form-input mode-input" />
+                <RecHint :desc="getOptionDesc('conv_direct_mode')" />
+              </label>
+              <datalist id="module-mode-values">
+                <option value="auto" />
+                <option value="on" />
+                <option value="off" />
+                <option value="auto,te=off" />
+                <option value="auto,vae=off" />
+              </datalist>
               <label class="form-checkbox" :title="getOptionDesc('vae_conv_direct')?.description">
-                <input v-model="loadParams.options!.vae_conv_direct" type="checkbox" />
+                <input v-model="loadParams.options!.vae_conv_direct" type="checkbox" :disabled="!!loadParams.options!.conv_direct_mode" />
                 <span>VAE Direct Convolution</span>
                 <RecHint :desc="getOptionDesc('vae_conv_direct')" />
               </label>
               <label class="form-checkbox" :title="getOptionDesc('diffusion_conv_direct')?.description">
-                <input v-model="loadParams.options!.diffusion_conv_direct" type="checkbox" />
+                <input v-model="loadParams.options!.diffusion_conv_direct" type="checkbox" :disabled="!!loadParams.options!.conv_direct_mode" />
                 <span>Diffusion Direct Convolution</span>
                 <RecHint :desc="getOptionDesc('diffusion_conv_direct')" />
               </label>
@@ -1334,6 +1359,9 @@ details[open] .accordion-header::before {
 }
 .cond-cache-input {
   width: 70px;
+}
+.mode-input {
+  width: 150px;
 }
 
 .options-grid {

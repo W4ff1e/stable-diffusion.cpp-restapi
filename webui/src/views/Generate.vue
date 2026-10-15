@@ -193,6 +193,9 @@ const vaeTileRelSizeY = ref(0.0)
 // Advanced Guidance (sd_guidance_params_t passthrough)
 const imgCfgScale = ref(-1)         // -1 = inherit cfg_scale
 const extraSampleArgs = ref('')      // key=value pass-through
+// Custom sigma schedule: comma list or a preset name (qwen-image-2.1-turbo).
+// Sent as-is; the backend expands presets and parses the list.
+const customSigmas = ref('')
 const imagePreprocess = ref('')      // sd.cpp image-preprocessing rules (PR #2028); empty = model defaults
 
 // PuLID-Flux (sd_pulid_params_t)
@@ -532,6 +535,7 @@ function getCurrentSettings() {
     vaeTileRelSizeY: vaeTileRelSizeY.value,
     imgCfgScale: imgCfgScale.value,
     extraSampleArgs: extraSampleArgs.value,
+    customSigmas: customSigmas.value,
     pulidIdEmbeddingPath: pulidIdEmbeddingPath.value,
     pulidIdWeight: pulidIdWeight.value,
     hiresEnabled: hiresEnabled.value,
@@ -592,6 +596,7 @@ function applySettings(settings: Record<string, unknown>) {
   if (settings.vaeTileRelSizeY !== undefined) vaeTileRelSizeY.value = settings.vaeTileRelSizeY as number
   if (settings.imgCfgScale !== undefined) imgCfgScale.value = settings.imgCfgScale as number
   if (settings.extraSampleArgs !== undefined) extraSampleArgs.value = settings.extraSampleArgs as string
+  if (settings.customSigmas !== undefined) customSigmas.value = settings.customSigmas as string
   if (settings.pulidIdEmbeddingPath !== undefined) pulidIdEmbeddingPath.value = settings.pulidIdEmbeddingPath as string
   if (settings.pulidIdWeight !== undefined) pulidIdWeight.value = settings.pulidIdWeight as number
   if (settings.hiresEnabled !== undefined) hiresEnabled.value = settings.hiresEnabled as boolean
@@ -848,7 +853,7 @@ watch([
   fps, flowShift, slgScale, cacheMode, easycacheThreshold,
   taylorseerNDerivatives, taylorseerSkipInterval, spectrumW, vaeTiling,
   vaeTileSizeX, vaeTileSizeY, vaeTileOverlap, vaeTileRelSizeX, vaeTileRelSizeY,
-  imgCfgScale, extraSampleArgs,
+  imgCfgScale, extraSampleArgs, customSigmas,
   pulidIdEmbeddingPath, pulidIdWeight,
   hiresEnabled, hiresUpscaler, hiresModelPath, hiresScale,
   hiresTargetWidth, hiresTargetHeight, hiresSteps,
@@ -899,6 +904,7 @@ interface RecommendedSettings {
   height: number
   slgScale?: number
   cacheMode?: string
+  customSigmas?: string
 }
 
 // Resolve the current architecture preset using JSON-driven match rules
@@ -959,6 +965,7 @@ const recommended = computed((): RecommendedSettings | null => {
     slg_scale?: number
     cache_mode?: string
     easycache?: boolean
+    custom_sigmas?: string | number[]
   }
   return {
     sampler: defaults.sampler || 'euler',
@@ -970,7 +977,8 @@ const recommended = computed((): RecommendedSettings | null => {
     width: defaults.width || 1024,
     height: defaults.height || 1024,
     slgScale: defaults.slg_scale,
-    cacheMode: defaults.cache_mode || (defaults.easycache ? 'easycache' : undefined)
+    cacheMode: defaults.cache_mode || (defaults.easycache ? 'easycache' : undefined),
+    customSigmas: typeof defaults.custom_sigmas === 'string' ? defaults.custom_sigmas : undefined
   }
 })
 
@@ -1001,6 +1009,9 @@ function applyRecommendedSettings() {
   if (recommended.value.cacheMode !== undefined) {
     cacheMode.value = recommended.value.cacheMode
   }
+  // Presets with their own sigma schedule (Qwen-Image 2.1 Turbo) set it;
+  // every other preset clears a schedule left over from a previous model.
+  customSigmas.value = recommended.value.customSigmas ?? ''
 
   store.showToast('Applied recommended settings', 'success')
 }
@@ -1637,6 +1648,7 @@ function loadJobParams(
     if (params.vae_tile_rel_size_y !== undefined) vaeTileRelSizeY.value = params.vae_tile_rel_size_y as number
     if (params.img_cfg_scale !== undefined) imgCfgScale.value = params.img_cfg_scale as number
     if (params.extra_sample_args !== undefined) extraSampleArgs.value = params.extra_sample_args as string
+    if (Array.isArray(params.custom_sigmas)) customSigmas.value = (params.custom_sigmas as number[]).join(', ')
     if (params.image_preprocess !== undefined) imagePreprocess.value = params.image_preprocess as string
     if (params.pulid_id_embedding_path !== undefined) pulidIdEmbeddingPath.value = params.pulid_id_embedding_path as string
     if (params.pulid_id_weight !== undefined) pulidIdWeight.value = params.pulid_id_weight as number
@@ -1789,6 +1801,9 @@ async function handleSubmit() {
     }
     if (extraSampleArgs.value.trim()) {
       baseParams.extra_sample_args = extraSampleArgs.value.trim()
+    }
+    if (customSigmas.value.trim()) {
+      baseParams.custom_sigmas = customSigmas.value.trim()
     }
     // Image-input preprocessing rules only apply to image jobs (the
     // backend's txt2vid parser doesn't accept the field).
@@ -2445,6 +2460,14 @@ async function handleSubmit() {
               <label class="form-label">Extra Sample Args</label>
               <input v-model="extraSampleArgs" type="text" class="form-input" placeholder="key1=val1,key2=val2" />
               <div class="form-hint">Pass-through key=value list for sd.cpp's sample arg parser (model-specific knobs).</div>
+            </div>
+            <div class="form-group" :title="genOpt('custom_sigmas')">
+              <label class="form-label">Custom Sigmas</label>
+              <input v-model="customSigmas" type="text" class="form-input" list="sigma-presets" placeholder="empty = scheduler; e.g. 1.0,0.6,0.3,0.0" />
+              <datalist id="sigma-presets">
+                <option value="qwen-image-2.1-turbo" />
+              </datalist>
+              <div class="form-hint">Replaces the scheduler; the number of sigmas sets the real step count. Preset: qwen-image-2.1-turbo (8 steps).</div>
             </div>
             <div v-if="mode !== 'txt2vid'" class="form-group">
               <label class="form-label">Image Preprocessing Rules</label>

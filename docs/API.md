@@ -751,6 +751,9 @@ Concurrency: only one load can be in flight at a time. A second `POST /models/lo
 | `diffusion_flash_attn` | boolean | false | Enable Flash Attention specifically for the diffusion model (UNet/DiT/Flux). sd.cpp keeps this separate from `flash_attn` because CUDA support and numerical stability used to differ between the two. |
 | `sage_attn` | boolean | false | Native CUDA SageAttention for the diffusion model (SM80+ / CUDA 12+). Silently ignored on older GPUs. |
 | `conditioning_cache_size` | integer | 4 | LRU cache of prompt-encode results per loaded model; repeating a prompt skips the text encoder. `0` disables. |
+| `flash_attn_mode` | string | "" | Per-module flash attention: `on`, `off`, `auto`, optionally with module assignments (`auto,te=off,vae=on`). Overrides `flash_attn` / `diffusion_flash_attn` when set. Empty keeps those flags; with both false, sd.cpp auto-selects per backend. |
+| `conv_direct_mode` | string | "" | Per-module direct convolution: `on`, `off`, `auto`, optionally with `diffusion` / `vae` / `controlnet` assignments (`auto,vae=off`). Overrides `vae_conv_direct` / `diffusion_conv_direct` when set. |
+| `batched_cfg` | boolean | true | Run the conditional and unconditional CFG branches in one batched UNet forward when the run qualifies (UNet models). |
 | `enable_mmap` | boolean | true | Use memory-mapped file loading |
 | `tae_preview_only` | boolean | false | Only use TAESD for preview, not final |
 | `eager_load` | boolean | false | Eagerly move weights to the compute backend at load time |
@@ -1070,7 +1073,7 @@ Generate images from text prompt.
 | `skip_layers` | array | No | [7,8,9] | Layers to skip for SLG |
 | `slg_start` | float | No | 0.01 | SLG start percent |
 | `slg_end` | float | No | 0.2 | SLG end percent |
-| `custom_sigmas` | array | No | [] | Custom sigma schedule (overrides scheduler) |
+| `custom_sigmas` | array \| string | No | [] | Custom sigma schedule (overrides scheduler; the count sets the real step count). Also accepts a comma-separated string or the preset `"qwen-image-2.1-turbo"` (8 steps). |
 | `ref_images` | array | No | [] | Array of base64-encoded reference images (Flux Kontext) |
 | `ref_image_args` | string | No | "" | Comma-separated `k=v` flags for reference-image processing (e.g. `resize_before_vae=0,ref_index_mode=increase`) - see upstream sd.cpp docs |
 | `image_preprocess` | string | No | "" | Input-image preprocessing rules, semicolon-separated `target=...,key=value` entries (e.g. `target=init,mode=crop-resize,filter=lanczos;target=ref,index=0,mode=fit-pad,width=768,height=768`). Empty keeps per-model defaults. Reference images keep their alpha channel (Qwen-Image 2.1 transparency). |

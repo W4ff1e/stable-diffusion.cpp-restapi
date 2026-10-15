@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cmath>
 #include <stdexcept>
+#include <sstream>
 #include <regex>
 #include <map>
 #include <unordered_set>
@@ -603,6 +604,35 @@ std::vector<float> parse_float_array(const nlohmann::json& j, const std::string&
     return result;
 }
 
+// Sigma schedule: a number array, a comma-separated string, or a named
+// preset (same names sd-cli's --sigmas accepts). Presets live in sd-cli,
+// not in the library, so they are expanded here.
+static std::vector<float> parse_sigmas(const nlohmann::json& j, const std::string& key) {
+    if (!j.contains(key) || j[key].is_null() || !j[key].is_string()) {
+        return parse_float_array(j, key);
+    }
+    std::string value = j[key].get<std::string>();
+    if (value == "qwen-image-2.1-turbo") {
+        return {1.0f, 0.978453f, 0.95418f, 0.926626f, 0.89508f,
+                0.845148f, 0.704534f, 0.414568f, 0.0f};
+    }
+    std::vector<float> result;
+    std::stringstream ss(value);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        item.erase(0, item.find_first_not_of(" \t[]"));
+        item.erase(item.find_last_not_of(" \t[]") + 1);
+        if (item.empty()) continue;
+        try {
+            result.push_back(std::stof(item));
+        } catch (...) {
+            throw std::invalid_argument(key + ": expected numbers or a preset name "
+                                        "(qwen-image-2.1-turbo), got '" + value + "'");
+        }
+    }
+    return result;
+}
+
 // Helper to parse array of strings
 std::vector<std::string> parse_string_array(const nlohmann::json& j, const std::string& key) {
     if (!j.contains(key) || j[key].is_null()) {
@@ -857,7 +887,7 @@ Txt2ImgParams Txt2ImgParams::from_json(const nlohmann::json& j) {
     p.slg_end = parse_float(j, "slg_end", 0.2f);
 
     // Custom sigmas
-    p.custom_sigmas = parse_float_array(j, "custom_sigmas");
+    p.custom_sigmas = parse_sigmas(j, "custom_sigmas");
 
     // Reference images for Flux Kontext
     p.ref_images_base64 = parse_string_array(j, "ref_images");
@@ -1123,7 +1153,7 @@ Img2ImgParams Img2ImgParams::from_json(const nlohmann::json& j) {
     p.slg_end = parse_float(j, "slg_end", 0.2f);
 
     // Custom sigmas
-    p.custom_sigmas = parse_float_array(j, "custom_sigmas");
+    p.custom_sigmas = parse_sigmas(j, "custom_sigmas");
 
     // Init image (required for img2img)
     if (j.contains("init_image_base64") && !j["init_image_base64"].is_null()) {
@@ -1414,7 +1444,7 @@ Txt2VidParams Txt2VidParams::from_json(const nlohmann::json& j) {
     p.eta = parse_float(j, "eta", 0.0f);
     p.shifted_timestep = parse_int(j, "shifted_timestep", 0);
     p.extra_sample_args = parse_string(j, "extra_sample_args", "");
-    p.custom_sigmas = parse_float_array(j, "custom_sigmas");
+    p.custom_sigmas = parse_sigmas(j, "custom_sigmas");
 
     // Skip Layer Guidance (SLG)
     p.slg_scale = parse_float(j, "slg_scale", 0.0f);
@@ -1485,7 +1515,7 @@ Txt2VidParams Txt2VidParams::from_json(const nlohmann::json& j) {
     p.high_noise_shifted_timestep = parse_int(j, "high_noise_shifted_timestep", 0);
     p.high_noise_flow_shift = parse_float(j, "high_noise_flow_shift", 0.0f);
     p.high_noise_extra_sample_args = parse_string(j, "high_noise_extra_sample_args", "");
-    p.high_noise_custom_sigmas = parse_float_array(j, "high_noise_custom_sigmas");
+    p.high_noise_custom_sigmas = parse_sigmas(j, "high_noise_custom_sigmas");
     p.high_noise_distilled_guidance = parse_float(j, "high_noise_distilled_guidance", 3.5f);
     p.high_noise_slg_scale = parse_float(j, "high_noise_slg_scale", 0.0f);
     p.high_noise_skip_layers = parse_int_array(j, "high_noise_skip_layers", {7, 8, 9});

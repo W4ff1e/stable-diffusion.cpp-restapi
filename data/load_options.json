@@ -222,6 +222,27 @@
       "type": "number",
       "default": 4,
       "recommended": "Keep 4. Raise if you cycle through more prompts on a big LLM text encoder; 0 only to save a little RAM."
+    },
+    "flash_attn_mode": {
+      "label": "Flash Attention Mode",
+      "description": "Per-module flash attention selection (sd.cpp --flash-attn). `on`, `off` or `auto`, optionally followed by module assignments such as `auto,te=off,vae=on` (modules: te, diffusion, vae, clip_vision, controlnet, ...). When set it overrides Flash Attention / Diffusion Flash Attention. Empty keeps those legacy checkboxes; with both unchecked sd.cpp auto-selects per backend by probing.",
+      "type": "string",
+      "default": "",
+      "recommended": "Leave empty to keep the current behavior. Use `auto` to let sd.cpp decide per module, or `off` if flash attention causes artifacts on your backend."
+    },
+    "conv_direct_mode": {
+      "label": "Direct Convolution Mode",
+      "description": "Per-module direct convolution selection (sd.cpp --conv-direct). `on`, `off` or `auto`, optionally with `diffusion`, `vae` or `controlnet` assignments such as `auto,vae=off`. When set it overrides the VAE / Diffusion Direct Convolution checkboxes. Auto benchmarks on Vulkan and uses implicit-GEMM checks elsewhere.",
+      "type": "string",
+      "default": "",
+      "recommended": "Leave empty (legacy checkboxes, auto when both are off). Compare `on` and `off` over several runs before forcing either."
+    },
+    "batched_cfg": {
+      "label": "Batched CFG",
+      "description": "Run the conditional and unconditional guidance branches as one batch of two through the UNet instead of two separate forwards per step. Only applies to UNet models (SD1/SD2/SDXL family) with CFG > 1.",
+      "type": "boolean",
+      "default": true,
+      "recommended": "Keep on. Turn off only to compare output or if VRAM is too tight for the doubled batch."
     }
   },
   "categories": {
@@ -233,7 +254,10 @@
         "enable_mmap",
         "n_threads",
         "vae_conv_direct",
-        "diffusion_conv_direct"
+        "diffusion_conv_direct",
+        "flash_attn_mode",
+        "conv_direct_mode",
+        "batched_cfg"
       ]
     },
     "memory": {

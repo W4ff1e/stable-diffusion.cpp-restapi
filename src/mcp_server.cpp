@@ -268,6 +268,9 @@ json McpServer::handle_list_tools() {
 
         // Load options (flat — handler routes these into nested 'options')
         {"flash_attn", {{"type", "boolean"}, {"description", "Enable Flash Attention (default true)"}}},
+        {"flash_attn_mode", {{"type", "string"}, {"description", "Per-module flash attention: on | off | auto, optionally with module assignments like \"auto,te=off\". Overrides flash_attn when set."}}},
+        {"conv_direct_mode", {{"type", "string"}, {"description", "Per-module direct convolution: on | off | auto, optionally with diffusion/vae/controlnet assignments like \"auto,vae=off\"."}}},
+        {"batched_cfg", {{"type", "boolean"}, {"description", "Batch conditional + unconditional CFG into one UNet forward (default true)"}}},
         {"n_threads", {{"type", "integer"}, {"description", "CPU threads, -1 = auto (default -1)"}}},
         {"enable_mmap", {{"type", "boolean"}, {"description", "Memory-map weight files (default true)"}}},
         {"weight_type", {{"type", "string"}, {"description", "Force weight quantization: f32, f16, bf16, q8_0, q4_0, q4_k, q5_k, q6_k, nvfp4, ..."}}},
