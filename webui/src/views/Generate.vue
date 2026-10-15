@@ -1900,8 +1900,20 @@ async function handleSubmit() {
       }
       result = await api.img2img(params)
     } else {
+      // baseParams is shared with the image modes. /txt2vid rejects unknown
+      // fields, so drop the image-only ones: batch_count (a video job is a
+      // single sequence) and image conditioning left set from image work.
+      const videoBase = { ...baseParams }
+      for (const key of [
+        'batch_count', 'control_strength',
+        'ip_adapter_image_base64', 'ip_adapter_strength',
+        'pulid_id_embedding_path', 'pulid_id_weight',
+        'qwen_image_layers',
+      ]) {
+        delete (videoBase as Record<string, unknown>)[key]
+      }
       const params: Txt2VidParams = {
-        ...baseParams,
+        ...videoBase,
         video_frames: videoFrames.value,
         fps: fps.value,
         flow_shift: flowShift.value
