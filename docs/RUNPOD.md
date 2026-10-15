@@ -1,9 +1,8 @@
 # Deploying sdcpp-restapi on RunPod
 
 This guide walks through the full path from local repository to a running
-sdcpp-restapi pod on RunPod, including model auto-bootstrap. It captures the
-exact steps that produced the working deployment in `axk54v1gd0l5k7`
-(EU-RO-1, RTX A4500, network volume `k5r2rz6nar`).
+sdcpp-restapi pod on RunPod, including model auto-bootstrap. The steps were
+verified on an RTX A4500 pod with a network volume for the models.
 
 ## Prerequisites
 
@@ -406,21 +405,3 @@ Should never happen with this image — `architecture_manager.cpp` searches
 the exe-relative path `/opt/sdcpp/bin/../data/` which is populated by the
 Dockerfile's `cp /src/data/model_architectures.json /opt/sdcpp/data/`
 step. If it does occur, rebuild the image; the COPY likely failed.
-
-## Reference: this deployment
-
-Saved here for the record:
-
-```
-Date:           2026-05-04
-Account email:  szontagh.ferenc@gmail.com
-Account ID:     user_2kYBTtg5ONWGs1zrxGHP9mPpmc2
-Network volume: k5r2rz6nar  (sdcpp-models, 50 GB, EU-RO-1)
-Pod ID:         axk54v1gd0l5k7
-GPU:            RTX A4500 (20 GB, EU-RO-1)
-Realized $/hr:  $0.25
-Image:          <your-dockerhub-user>/sdcpp-restapi:0.2.0-cuda
-Bootstrap:      z-image-nvfp4
-WebUI URL:      https://axk54v1gd0l5k7-8080.proxy.runpod.net
-SSH:            ssh root@axk54v1gd0l5k7.runpod.io
-```
