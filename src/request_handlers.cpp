@@ -3647,9 +3647,11 @@ void RequestHandlers::handle_webui(const httplib::Request& req, httplib::Respons
     res.set_content(content, mime_type);
 }
 
-// Top-level directories under docs/ that are kept on disk but hidden from the
-// /docs endpoint (internal design artifacts, not user-facing reference docs).
-static const std::vector<std::string> kDocsHiddenDirs = {"plans"};
+// Top-level directories under docs/ that may exist on disk but must not be
+// served by the (unauthenticated) /docs endpoint: local design notes
+// (docs/superpowers, gitignored) and the removed docs/plans that older
+// installs still have.
+static const std::vector<std::string> kDocsHiddenDirs = {"plans", "superpowers"};
 
 static bool is_docs_path_hidden(const std::string& rel_path) {
     fs::path p(rel_path);

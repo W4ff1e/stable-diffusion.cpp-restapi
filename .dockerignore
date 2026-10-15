@@ -18,9 +18,6 @@ webui/*.tsbuildinfo
 
 # Local config & runtime data — never ship into the image
 config.json
-benchmark_output.log
-benchmark_v2_output.log
-benchmark_results/
 
 # Git metadata isn't needed in the build context
 .git/
@@ -29,3 +26,6 @@ benchmark_results/
 # Models and outputs (huge — must come from a mounted volume)
 data/output/
 data/SD_MODELS/
+
+# Local design notes (gitignored)
+docs/superpowers/

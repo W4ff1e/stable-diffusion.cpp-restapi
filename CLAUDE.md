@@ -2,142 +2,95 @@
 
 ## Project Overview
 
-**sdcpp-restapi** is a REST API server wrapping stable-diffusion.cpp for image/video generation. It provides:
-- HTTP REST API for txt2img, img2img, txt2vid, upscaling
-- WebSocket for real-time progress updates
-- Vue.js WebUI for browser-based interaction
-- Queue-based job processing with soft-delete recycle bin
+**sdcpp-restapi** is a REST API server wrapping [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) for image/video generation. It provides:
+- HTTP REST API for txt2img, img2img, txt2vid, upscaling, model conversion and model downloads
+- WebSocket for real-time progress, previews and queue events
+- Vue.js WebUI (Generate, Queue, Models, Downloads, Settings, ...)
+- MCP server (Model Context Protocol) for LLM clients
+- Queue-based job processing with a soft-delete recycle bin
+- Auto-generated OpenAPI 3.1 spec at `/openapi.json` and raw docs at `/docs/`
+
+Contributor rules live in `CONTRIBUTING.md` (one clear change per PR, no AI co-author trailers), security reporting in `SECURITY.md`.
 
 ## Repository Structure
 
 ```
-/data/sdcpp-restapi/
-├── src/                    # C++ backend source
-│   ├── main.cpp           # Entry point, server setup
-│   ├── request_handlers.cpp # HTTP route handlers + API registry setup
-│   ├── api_registry.cpp   # OpenAPI 3.1 schema generator
-│   ├── queue_manager.cpp  # Job queue with recycle bin
-│   ├── model_manager.cpp  # Model loading/unloading
-│   ├── mcp_server.cpp     # MCP (Model Context Protocol) server
-│   └── sd_wrapper.cpp     # sd.cpp integration
-├── include/               # C++ headers
-│   ├── mcp_server.hpp     # MCP server class declaration
-│   ├── api_schema.hpp     # Schema field types, SchemaBuilder fluent API
-│   ├── api_registry.hpp   # ApiRegistry class (route + schema registration)
-│   ├── api_schemas.hpp    # Master include for all schema structs
-│   └── api_schemas/       # Schema struct definitions by domain
-│       ├── common.hpp     # Shared enums, SuccessResponse, JobCreatedResponse
-│       ├── generation.hpp # GenerationRequestBase, Txt2Img/Img2Img/Txt2Vid/Upscale
-│       ├── models.hpp     # LoadModelRequest, LoadOptions, download schemas
-│       ├── queue.hpp      # Queue listing, job status, recycle bin schemas
-│       ├── health.hpp     # Health, memory, options response schemas
-│       ├── settings.hpp   # Preview, architecture, settings schemas
-│       └── assistant.hpp  # Assistant chat/status schemas
-├── webui/                 # Vue.js frontend
-│   ├── src/views/         # Page components
-│   ├── src/components/    # Reusable components
-│   ├── src/stores/app.ts  # Pinia state store
-│   └── src/api/client.ts  # API client with types
-├── docs/                  # Documentation (served at /docs endpoint)
-│   ├── API.md             # Complete API reference
-│   ├── LIBRARY_REFERENCE.md # Developer library reference
-│   ├── DEPENDENCIES-*.md  # Platform-specific build dependencies
-│   └── plans/             # Design documents
-├── CMakeLists.txt         # Build configuration
-└── config.example.json    # Server configuration template
+├── src/                     # C++ backend
+│   ├── main.cpp             # Entry point, server setup
+│   ├── request_handlers.cpp # HTTP route handlers + API registry setup, llms.txt
+│   ├── api_registry.cpp     # OpenAPI 3.1 schema generator
+│   ├── queue_manager.cpp    # Job queue, recycle bin, output path templates
+│   ├── model_manager.cpp    # Model scan/load/unload, load options
+│   ├── architecture_manager.cpp # Architecture presets (data/model_architectures.json)
+│   ├── download_manager.cpp # HF / CivitAI / URL downloads, HF directory bundles
+│   ├── sd_wrapper.cpp       # sd.cpp integration, per-request param parsing
+│   ├── mcp_server.cpp       # MCP server
+│   ├── websocket_server.cpp # WebSocket events
+│   └── utils.cpp            # uuid, path helpers (resolve_under), ...
+├── include/                 # C++ headers
+│   ├── api_schema.hpp       # Schema field types, SchemaBuilder fluent API
+│   ├── api_registry.hpp     # ApiRegistry (route + schema registration)
+│   └── api_schemas/         # Schema structs: common, generation, models,
+│                            # queue, health, settings, assistant
+├── data/                    # Runtime data shipped with the server
+│   ├── model_architectures.json # Presets + download catalog per architecture
+│   ├── load_options.json        # Load option labels/descriptions for the WebUI
+│   ├── generation_options.json  # Generation option labels/descriptions
+│   └── bootstrap_models.json    # Docker/RunPod first-start model list
+├── webui/src/               # Vue.js frontend
+│   ├── views/               # Pages (Generate, Queue, ModelLoad, Downloads, ...)
+│   ├── components/          # Reusable components
+│   ├── composables/         # useArchitectures.ts (preset matching, component scoring)
+│   ├── stores/app.ts        # Pinia store (WS event handling, notifications)
+│   ├── services/            # websocket.ts, notifications.ts, sounds
+│   └── api/client.ts        # API client + TypeScript types
+├── docs/                    # Served at /docs (API.md, API_REFERENCE.md, LLM_GUIDE.md, MCP.md, ...)
+├── scripts/                 # install.sh, uninstall.sh, check_download_links.py,
+│                            # generate-api-docs.py, bootstrap-models.sh, generate-self-cert.sh
+├── Dockerfile, entrypoint.sh, runpod-config.json  # Container / RunPod setup
+└── CMakeLists.txt           # Build; pins the sd.cpp commit
 ```
+
+`docs/superpowers/` holds local design notes; it is gitignored and hidden from `/docs` (`kDocsHiddenDirs` in `request_handlers.cpp`).
 
 ## Build Commands
 
 ```bash
-# Standard build
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSD_CUDA=ON
+cmake --build build -j$(nproc)
 
-# With experimental VRAM offloading (uses forked sd.cpp)
-cmake -DSD_EXPERIMENTAL_OFFLOAD=ON ..
-make -j$(nproc)
+# Faster local CUDA build (only the local GPU arch, non-portable binary)
+cmake -S . -B build -DSD_CUDA=ON -DSD_CUDA_ARCH_NATIVE=ON
 
-# WebUI build
-cd webui
-npm install
-npm run build
+# WebUI on its own (CMake also builds it when SDCPP_WEBUI=ON)
+cd webui && npm install && npm run build   # runs vue-tsc type check
 ```
 
-## Experimental Features
+Other options: `SD_VULKAN`, `SD_METAL`, `SD_HIPBLAS`, `SD_OPENCL`, `SDCPP_WEBUI`, `SDCPP_WEBSOCKET`, `SDCPP_ASSISTANT`, `SDCPP_MCP` (all ON except the backends).
 
-### VRAM Offloading (SD_EXPERIMENTAL_OFFLOAD)
+The old experimental VRAM-offload fork build (`SD_EXPERIMENTAL_OFFLOAD`, `SD_UNIFIED_STREAMING`) is dormant: its `option()` lines are commented out in CMakeLists.txt because upstream now covers this with `max_vram`, segmented compute and prefetch. The `#ifdef SDCPP_EXPERIMENTAL_OFFLOAD` code paths are kept only so it can be restored.
 
-Enables dynamic tensor offloading during generation to reduce VRAM usage. Uses the forked sd.cpp from `feature/vram-offloading` branch.
+## stable-diffusion.cpp dependency
 
-**To enable:**
-```bash
-cmake -DSD_EXPERIMENTAL_OFFLOAD=ON ..
-```
+sd.cpp is fetched with FetchContent and pinned by a **full 40-char commit SHA** (`GIT_TAG` in the stable-diffusion FetchContent block of CMakeLists.txt). Upgrade procedure:
 
-**Offload Modes:**
-- `none`: Keep all components on GPU (default, fastest)
-- `cond_only`: Offload only conditioning (LLM/CLIP) after use
-- `cond_diffusion`: Offload conditioning + diffusion, keep VAE
-- `aggressive`: Offload each component after use (saves most VRAM)
-- `layer_streaming`: Stream layers one-by-one (enables models larger than VRAM)
-
-**General Offload Options:**
-- `vram_estimation`: dryrun (accurate), formula (fast)
-- `offload_cond_stage`: Offload LLM/CLIP after conditioning
-- `offload_diffusion`: Offload diffusion model after sampling
-- `reload_cond_stage/reload_diffusion`: Reload components after generation
-- `target_free_vram_mb`: Target free VRAM before VAE decode (0 = always offload)
-- `min_offload_size_mb`: Minimum component size to offload
-
-**Layer Streaming Options (for `layer_streaming` mode):**
-- `layer_streaming_enabled`: Enable layer-by-layer streaming execution
-- `streaming_prefetch_layers`: Number of layers to prefetch ahead (default: 1)
-- `streaming_keep_layers_behind`: Layers to keep after execution (for skip connections)
-- `streaming_min_free_vram_mb`: Minimum VRAM to keep free during streaming
-
-**Backend implementation:**
-- `include/model_manager.hpp`: `ModelLoadParams` struct with all offload options
-- `src/model_manager.cpp`: Parses options, converts to `sd_offload_config_t`
-- `src/request_handlers.cpp`: Exposes `features.experimental_offload` in health endpoint
-
-**WebUI implementation:**
-- `webui/src/api/client.ts`: TypeScript types for offload options
-- `webui/src/stores/app.ts`: `experimentalOffloadEnabled` computed property
-- `webui/src/views/ModelLoad.vue`: VRAM Offloading accordion with layer streaming UI
-- `webui/src/views/Dashboard.vue`: Displays active offload settings with labels
-
-**Conditional compilation pattern:**
-```cpp
-#ifdef SDCPP_EXPERIMENTAL_OFFLOAD
-    // Experimental code here
-#endif
-```
+1. List new commits and diff `include/stable-diffusion.h`, `examples/common/common.cpp` (CLI options) and `docs/` between the old and new SHA.
+2. Wire new `sd_ctx_params_t` fields as load options (see below) and new generation fields in `sd_wrapper.cpp`. Features that only exist in sd-cli (e.g. sigma presets) must be implemented here.
+3. Add presets / downloads for new model architectures (match on the exact name sd.cpp reports, from `model_version_to_str` / the name table in `src/pipeline/diffusion_engine.cpp`).
+4. Update `docs/API.md`, `docs/LLM_GUIDE.md`, the WebUI types and controls.
 
 ## Key Patterns
 
 ### OpenAPI Schema System (Auto-Generated)
 
-The server generates an OpenAPI 3.1 specification at `GET /openapi.json` that is always in sync with the code. The schema is built from:
+`GET /openapi.json` is built from the code, so it is always current:
 
-1. **Schema structs** in `include/api_schemas/*.hpp` using `SchemaBuilder` fluent API
-2. **ApiRegistry** in `include/api_registry.hpp` that registers routes + schemas together
-3. **`addEndpoint<ReqType, ResType>()`** in `register_routes()` replaces direct `server.Get/Post` calls
+1. **Schema structs** in `include/api_schemas/*.hpp` using the `SchemaBuilder` fluent API
+2. **ApiRegistry** (`include/api_registry.hpp`) registers routes and schemas together
+3. **`api.addEndpoint<ReqType, ResType>(server, "POST", "/path", ...)`** in `register_routes()` instead of direct `server.Get/Post`
 
-**Adding a new endpoint:**
-1. Define request/response schema structs in `include/api_schemas/` (use `SchemaBuilder`)
-2. Use `api.addEndpoint<MyRequest, MyResponse>(server, "POST", "/path", ...)` in `register_routes()`
-3. The OpenAPI spec automatically includes the new endpoint and its schemas
+Schema features: inheritance via `allOf` (`Txt2ImgRequest` inherits `GenerationRequestBase`), `x-architecture-default: true` for fields whose defaults come from the presets, `#ifdef` gates, shared `$ref` schemas (need `api.registerSchema()`), `.query()` / `.path_param()` on the endpoint builder.
 
-**Schema features:**
-- **Inheritance via `allOf`**: e.g., `Txt2ImgRequest` inherits `GenerationRequestBase`
-- **`x-architecture-default: true`**: Marks fields whose defaults come from `data/model_architectures.json`
-- **Conditional compilation**: `#ifdef SDCPP_EXPERIMENTAL_OFFLOAD` includes/excludes offload fields
-- **`$ref` schemas**: Shared schemas like `LoadOptions` need explicit `api.registerSchema()` call
-- **Query/path params**: Use `.query()` / `.path_param()` fluent methods on the endpoint builder
-
-**Example:**
 ```cpp
 api.addEndpoint<Txt2ImgRequest, JobCreatedResponse>(
     server, "POST", "/txt2img",
@@ -145,120 +98,94 @@ api.addEndpoint<Txt2ImgRequest, JobCreatedResponse>(
     [this](auto& req, auto& res) { handle_txt2img(req, res); });
 ```
 
-### Adding New Model Load Options
+`docs/API_REFERENCE.md` is generated from `/openapi.json` by `scripts/generate-api-docs.py`; do not edit it by hand.
 
-1. Add to `ModelLoadParams` struct in `include/model_manager.hpp`
-2. Parse from JSON in `ModelLoadParams::from_json()` in `src/model_manager.cpp`
-3. Apply in `load_model()` function
-4. Store in `loaded_options_` for health endpoint
-5. Add field to `LoadOptions::schema()` in `include/api_schemas/models.hpp` (for OpenAPI)
-6. Add TypeScript types in `webui/src/api/client.ts` (LoadOptions, LoadModelParams)
-7. Add UI controls in `webui/src/views/ModelLoad.vue`
-8. Add display label in `webui/src/views/Dashboard.vue` formatOptionLabel()
+### Strict request parsing
+
+Generation bodies (`/txt2img`, `/img2img`, `/txt2vid`, `/upscale`) and model load options are parsed against closed allowlists (`KNOWN` sets + `reject_unknown_keys()` in `sd_wrapper.cpp`, `KNOWN_OPTIONS` in `ModelLoadParams::from_json()`). An unknown key is a 400 `Unknown field(s) in ...`. Consequences:
+- A new parameter must be added to the allowlist of every endpoint that accepts it.
+- The WebUI must not send keys an endpoint does not accept. `Generate.vue` builds a shared `baseParams` for all modes, so image-only keys are stripped before `api.txt2vid()`.
+- Server-written metadata that can round-trip back (e.g. `ref_images_count`) must be accepted-and-ignored.
+
+### Adding a New Model Load Option
+
+1. Field in `ModelLoadParams` (`include/model_manager.hpp`)
+2. Add to `KNOWN_OPTIONS` and parse in `ModelLoadParams::from_json()` (`src/model_manager.cpp`); validate enums/syntax there so bad values are a clear 400, not a failed load
+3. Apply to `sd_ctx_params_t` in `load_model()`
+4. Echo into `loaded_options_` (reported by `/health`, used to restore the edit form)
+5. `LoadOptions::schema()` in `include/api_schemas/models.hpp`
+6. Description in `data/load_options.json` (and its category list)
+7. MCP `model` tool property in `handle_list_tools()` (MCP routes options generically)
+8. TypeScript type in `webui/src/api/client.ts`, control in `webui/src/views/ModelLoad.vue`, label in `Dashboard.vue` `formatOptionLabel()`
+
+**Adding a new component slot** (a model file like `taesd`, not an option): add it to the loaded-components tracking in `ModelManager::load_model()` so `/health` reports it in `loaded_components`, and to the component restore in `webui/src/views/ModelLoad.vue`, otherwise editing the loaded model drops it.
+
+### Architecture presets and download catalog
+
+`data/model_architectures.json` (auto-reloaded on change) holds one preset per architecture key:
+- `requiredComponents` / `optionalComponents` (drive the ModelLoad pickers), `loadOptions`, `generationDefaults` (the Generate page's recommended settings; also `custom_sigmas`), `imageEditMode`, `componentScoring` (regex scores for auto-suggest)
+- `aliases`: include the **exact name sd.cpp reports** (e.g. `"Flux.3 Image Klein"`); the server's `ArchitectureManager::get()` tries key, then aliases, then the longest substring match
+- `match: {architecture, nameRegex}`: lets several presets share one reported name (variants such as Turbo/Base); the WebUI matcher in `useArchitectures.ts` prefers a `nameRegex` hit over the plain key
+- `downloads[]`: the Downloads page catalog (`source` huggingface / url / civitai, `repo_id`, `filename`, `subfolder`, `bundle: "directory"`, `target_type`, `recommended`, `notes`)
+
+After changing downloads run `scripts/check_download_links.py` (`--anonymous` to see what users without an HF token get; gated links report 401/403).
+
+### Static file serving
+
+`/output`, `/thumb`, `/ui` and `/docs` must resolve request paths with `utils::resolve_under(base, rel)` (rejects absolute paths, `..` and symlinks leaving the base). cpp-httplib already URL-decodes `req.path`; never decode the regex capture a second time. `/ui` and `/docs` are unauthenticated, `/output` and `/thumb` too when `auth.allow_public_outputs` is true.
 
 ### WebSocket Events
 
-Events broadcast from `src/websocket_server.cpp`:
-- `job_added`, `job_status_changed`, `job_progress`, `job_preview`, `job_cancelled`
-- `model_loading_progress`, `model_loaded`, `model_load_failed`, `model_unloaded`
-- `upscaler_loaded`, `upscaler_unloaded`
-- `server_status`, `server_shutdown`
+Broadcast from `src/websocket_server.cpp`:
+- Jobs: `job_added`, `job_status_changed` (carries `type` and `title`), `job_progress` (incl. `bytes_done` / `bytes_total` for downloads), `job_preview`, `job_cancelled`, `job_deleted`, `job_restored`
+- Models: `model_loading_progress`, `model_loaded`, `model_load_failed`, `model_unloaded`, `auto_unloaded`, `upscaler_loaded`, `upscaler_unloaded`
+- Server: `server_status`, `server_shutdown`, `memory_status`
 
 ### MCP Server (Model Context Protocol)
 
-The MCP server at `POST /mcp` implements JSON-RPC 2.0 for Streamable HTTP transport. It's compile-time optional via `SDCPP_MCP` (ON by default).
+`POST /mcp`, JSON-RPC 2.0 over Streamable HTTP. Compile-time optional via `SDCPP_MCP` (ON by default, `#ifdef SDCPP_MCP_ENABLED`). See `docs/MCP.md`.
 
-**Tools (4):**
-- `generate(type, prompt, ...)` — Types: `txt2img`, `img2img`, `video`, `upscale`
-- `model(action, ...)` — Actions: `load`, `unload`, `list`
-- `job(action, ...)` — Actions: `status`, `cancel`, `delete` (soft-delete → recycle bin), `search` (filtered/paginated)
-- `image(job_id, [index], [size])` — Returns a completed job's output(s) as inline MCP image content (base64 JPEG) so a vision-capable model can see the result, not just a URL. **Opt-in: only registered when `config.mcp.image_tool_enabled` is true.** Outputs are downscaled to `size` (longest side, default `mcp.image_default_max_dim`=768, clamped to `mcp.image_max_dim`=2048) and JPEG-re-encoded (`mcp.image_jpeg_quality`=85) to bound payload — an 8192px upscale comes back small. Capped at 4 images; non-decodable outputs (`.mp4`, webp) skipped (use the URL from `job status`). `/health` `features.mcp_image_tool` reports the toggle.
+**Tools:**
+- `generate(type, prompt, ...)`: `txt2img`, `img2img`, `video`, `upscale`
+- `model(action, ...)`: `load`, `unload`, `list`
+- `job(action, ...)`: `status`, `cancel`, `delete` (soft-delete to the recycle bin), `search` (filtered, max 10 per page)
+- `image(job_id, [index], [size])`: returns finished outputs as inline base64 JPEG for vision models. Opt-in via `config.mcp.image_tool_enabled`; downscaled to `size` (default `mcp.image_default_max_dim` 768, max `mcp.image_max_dim` 2048), JPEG quality `mcp.image_jpeg_quality`, max 4 images, non-decodable outputs (mp4, webp) skipped. `/health` `features.mcp_image_tool` reports it.
 
-**Resources (7):** sdcpp://health, sdcpp://memory, sdcpp://models, sdcpp://models/loaded, sdcpp://queue (last 10 items), sdcpp://queue/{job_id}, sdcpp://architectures
+**Resources (7):** `sdcpp://health`, `sdcpp://memory`, `sdcpp://models`, `sdcpp://models/loaded`, `sdcpp://queue` (last 10), `sdcpp://queue/{job_id}`, `sdcpp://architectures`. All queue responses are capped at 10 items.
 
-**Queue limits:** All MCP queue responses are capped at 10 items max. The `sdcpp://queue` resource returns the last 10 items. The `job(action:'search')` supports filtering (prompt text, status, type, architecture, model, date range) with pagination capped at 10 per page.
+Adding a tool action: add it to the tool's `enum` in `handle_list_tools()`, handle it in `tool_generate` / `tool_model` / `tool_job`, extend the `inputSchema`. Adding a tool: declaration in `include/mcp_server.hpp`, definition in `handle_list_tools()`, implementation, dispatch in `handle_call_tool()`. Adding a resource: declaration, entry in `handle_list_resources()`, implementation, URI case in `handle_read_resource()`.
 
-**Adding a new action to an existing MCP tool:**
-1. Add the action string to the tool's `enum` in `handle_list_tools()` in `src/mcp_server.cpp`
-2. Add `else if (action == "new_action")` case in the tool's implementation (`tool_generate`, `tool_model`, or `tool_job`)
-3. Add any new input properties to the tool's `inputSchema`
+### Queue
 
-**Adding a new MCP tool:**
-1. Add method declaration to `include/mcp_server.hpp`
-2. Add tool definition in `handle_list_tools()` in `src/mcp_server.cpp`
-3. Implement tool function
-4. Add dispatch case in `handle_call_tool()`
-
-**Adding a new MCP resource:**
-1. Add method declaration to `include/mcp_server.hpp`
-2. Add resource entry in `handle_list_resources()`
-3. Implement resource function (e.g., `resource_my_data()`)
-4. Add URI dispatch case in `handle_read_resource()`
-
-**Conditional compilation:**
-```cpp
-#ifdef SDCPP_MCP_ENABLED
-    // MCP code here
-#endif
-```
-
-### Queue Soft-Delete (Recycle Bin)
-
-Jobs are soft-deleted with `status=deleted` and `deleted_at` timestamp. Auto-purged after configurable retention period. See `src/queue_manager.cpp`.
+Jobs are soft-deleted (`status=deleted`, `deleted_at`) and auto-purged after the configured retention. Output folders follow the runtime-configurable `output_path_template` (placeholders like `{date}`, `{job_id}`, `{type}`, `{model}`), persisted to config.json. List responses strip base64 payloads to stay small. See `src/queue_manager.cpp`.
 
 ## Testing
 
 ```bash
-# Run server
-./sdcpp-restapi --config ../config.json
+./build/bin/sdcpp-restapi --config config.json
 
-# Health check
 curl http://localhost:8080/health
+curl http://localhost:8080/openapi.json | jq '.paths | keys | length'
+curl http://localhost:8080/openapi.json | jq '.components.schemas | keys'
 
-# OpenAPI schema (auto-generated, always current)
-curl http://localhost:8080/openapi.json | jq '.paths | keys | length'  # endpoint count
-curl http://localhost:8080/openapi.json | jq '.components.schemas | keys'  # schema names
-
-# Check if experimental offload is enabled
-curl -s http://localhost:8080/health | jq '.features.experimental_offload'
-
-# Test MCP endpoint
-curl -s -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
+# MCP
+curl -s -X POST http://localhost:8080/mcp -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | jq .
 
-# Documentation (raw markdown)
-curl http://localhost:8080/docs/        # Table of contents
-curl http://localhost:8080/docs/API.md  # Specific doc file
+# Docs
+curl http://localhost:8080/docs/
+curl http://localhost:8080/docs/API.md
+
+# Download catalog links
+scripts/check_download_links.py --anonymous
 ```
 
-## Supported Model Architectures
-
-Architecture presets are defined in `data/model_architectures.json` and auto-reloaded on change.
-
-**Key architectures:**
-- SD1/SD2/SDXL: Standard Stable Diffusion (VAE optional)
-- SD3: Requires CLIP-L, CLIP-G, T5-XXL
-- Flux: Requires VAE (ae.safetensors), CLIP-L, T5-XXL
-- Flux2: Requires flux2_ae VAE and LLM (Mistral-Small or Qwen3)
-- Z-Image: Fast model requiring ae.gguf VAE and Qwen3 4B LLM
-- Qwen-Image: Requires qwen_image_vae and Qwen2.5-VL 7B LLM
-- Anima: Requires qwen_image_vae and Qwen3 0.6B Base LLM
-- Chroma: Requires ae.safetensors VAE and T5-XXL
-- WAN: Video generation requiring video VAE and T5-XXL
-
-**Adding new architecture:**
-1. Add entry to `data/model_architectures.json` with:
-   - `requiredComponents`: VAE, CLIP, T5, LLM as needed
-   - `generationDefaults`: sampler, scheduler, steps, cfg_scale, width, height, etc.
-   - `loadOptions`: flash_attn, offload_to_cpu, etc.
-2. Add component suggestions to `webui/src/composables/useArchitectures.ts` (scoring for auto-suggest)
-3. Auto-detection happens via tensor name patterns in sd.cpp's model.cpp
-4. Recommended settings in Generate view come from `generationDefaults` in the architecture JSON (not hardcoded)
+The server searches for `data/model_architectures.json` next to the binary, in `../data` and in the working directory; a test instance started elsewhere has no presets.
 
 ## Common Issues
 
-- **WebUI shows "Loading application..."**: Check if mutex is held too long blocking /health endpoint
-- **ESRGAN models not showing**: Only .pth files that are ZIP archives are supported (magic bytes check)
-- **Upscaler progress not showing**: Ensure progress callback uses "report-all mode" (expected_steps=0)
-- **Anima model not detected**: Ensure sd.cpp fork is updated (delete build/_deps/stable-diffusion-src and rebuild)
+- **`Unknown field(s) in /txt2vid body: ...`**: a client sent a key that endpoint does not accept (see Strict request parsing).
+- **WebUI shows "Loading application..."**: a mutex held too long is blocking `/health`.
+- **ESRGAN / MoSR models not showing**: only `.pth` files that are ZIP archives are listed (magic bytes check).
+- **Upscaler progress not showing**: the progress callback must use report-all mode (`expected_steps=0`).
+- **Architecture not detected / wrong preset**: check the name sd.cpp reports (`/health` `model_architecture`) against the preset key, `aliases` and `match` in `data/model_architectures.json`.
